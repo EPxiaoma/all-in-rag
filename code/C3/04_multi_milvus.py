@@ -1,19 +1,21 @@
 import os
-from tqdm import tqdm
 from glob import glob
-import torch
-from visual_bge.visual_bge.modeling import Visualized_BGE
-from pymilvus import MilvusClient, FieldSchema, CollectionSchema, DataType
-import numpy as np
+
 import cv2
+import numpy as np
+import torch
 from PIL import Image
+from pymilvus import MilvusClient, FieldSchema, CollectionSchema, DataType
+from tqdm import tqdm
+
+from visual_bge.visual_bge.modeling import Visualized_BGE
 
 # 1. 初始化设置
 MODEL_NAME = "BAAI/bge-base-en-v1.5"
 MODEL_PATH = "../../models/bge/Visualized_base_en_v1.5.pth"
 DATA_DIR = "../../data/C3"
 COLLECTION_NAME = "multimodal_demo"
-MILVUS_URI = "http://localhost:19530"
+MILVUS_URI = "http://39.105.217.174:19530"
 
 # 2. 定义工具 (编码器和可视化函数)
 class Encoder:
@@ -22,11 +24,13 @@ class Encoder:
         self.model = Visualized_BGE(model_name_bge=model_name, model_weight=model_path)
         self.model.eval()
 
+    # 图文联合编码
     def encode_query(self, image_path: str, text: str) -> list[float]:
         with torch.no_grad():
             query_emb = self.model.encode(image=image_path, text=text)
         return query_emb.tolist()[0]
 
+    # 图像编码
     def encode_image(self, image_path: str) -> list[float]:
         with torch.no_grad():
             query_emb = self.model.encode(image=image_path)
@@ -65,7 +69,9 @@ def visualize_results(query_image_path: str, retrieved_images: list, img_height:
 
 # 3. 初始化客户端
 print("--> 正在初始化编码器和Milvus客户端...")
+# 编码器
 encoder = Encoder(MODEL_NAME, MODEL_PATH)
+# Milvus
 milvus_client = MilvusClient(uri=MILVUS_URI)
 
 # 4. 创建 Milvus Collection
@@ -79,18 +85,19 @@ if not image_list:
     raise FileNotFoundError(f"在 {DATA_DIR}/dragon/ 中未找到任何 .png 图像。")
 dim = len(encoder.encode_image(image_list[0]))
 
+# 创建 Field
 fields = [
     FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
     FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=dim),
     FieldSchema(name="image_path", dtype=DataType.VARCHAR, max_length=512),
 ]
 
-# 创建集合 Schema
+# 创建 Schema
 schema = CollectionSchema(fields, description="多模态图文检索")
 print("Schema 结构:")
 print(schema)
 
-# 创建集合
+# 创建 Collection
 milvus_client.create_collection(collection_name=COLLECTION_NAME, schema=schema)
 print(f"成功创建 Collection: '{COLLECTION_NAME}'")
 print("Collection 结构:")
@@ -103,11 +110,12 @@ for image_path in tqdm(image_list, desc="生成图像嵌入"):
     vector = encoder.encode_image(image_path)
     data_to_insert.append({"vector": vector, "image_path": image_path})
 
+# 写入 Milvus
 if data_to_insert:
     result = milvus_client.insert(collection_name=COLLECTION_NAME, data=data_to_insert)
     print(f"成功插入 {result['insert_count']} 条数据。")
 
-# 6. 创建索引
+# 6. 创建 HNSW 索引
 print(f"\n--> 正在为 '{COLLECTION_NAME}' 创建索引")
 index_params = milvus_client.prepare_index_params()
 index_params.add_index(
@@ -137,13 +145,14 @@ search_results = milvus_client.search(
     search_params={"metric_type": "COSINE", "params": {"ef": 128}}
 )[0]
 
+# 8. 打印检索结果
 retrieved_images = []
 print("检索结果:")
 for i, hit in enumerate(search_results):
     print(f"  Top {i+1}: ID={hit['id']}, 距离={hit['distance']:.4f}, 路径='{hit['entity']['image_path']}'")
     retrieved_images.append(hit['entity']['image_path'])
 
-# 8. 可视化与清理
+# 9. 可视化与清理
 print(f"\n--> 正在可视化结果并清理资源")
 if not retrieved_images:
     print("没有检索到任何图像。")
