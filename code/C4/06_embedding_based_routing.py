@@ -1,13 +1,18 @@
 import os
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_deepseek import ChatDeepSeek
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_core.runnables import RunnableLambda, RunnablePassthrough, RunnablePassthrough
-from langchain_community.utils.math import cosine_similarity
+
 import numpy as np
+from dotenv import load_dotenv
+from langchain.chat_models import init_chat_model
+from langchain_community.utils.math import cosine_similarity
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnableLambda
+from langchain_huggingface import HuggingFaceEmbeddings
 
 # 1. 定义路由描述
+#    核心思路：用自然语言描述每个路由"擅长什么"，
+#    后续通过计算用户问题与这些描述的语义相似度来决定路由，
+#    而非依赖关键词匹配或 LLM 分类——这是"语义路由"的精髓。
 sichuan_route_prompt = "你是一位处理川菜的专家。用户的问题是关于麻辣、辛香、重口味的菜肴，例如水煮鱼、麻婆豆腐、鱼香肉丝、宫保鸡丁、花椒、海椒等。"
 cantonese_route_prompt = "你是一位处理粤菜的专家。用户的问题是关于清淡、鲜美、原汁原味的菜肴，例如白切鸡、老火靓汤、虾饺、云吞面等。"
 
@@ -16,11 +21,14 @@ route_names = ["川菜", "粤菜"]
 
 # 初始化嵌入模型，并对路由描述进行向量化
 embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh-v1.5")
+
+# 提前将路由描述向量化并缓存
 route_prompt_embeddings = embeddings.embed_documents(route_prompts)
 print(f"已定义 {len(route_names)} 个路由: {', '.join(route_names)}")
 
 # 2. 定义不同路由的目标链
-llm = ChatDeepSeek(
+load_dotenv()
+llm = init_chat_model(
     model="deepseek-chat", 
     temperature=0, 
     api_key=os.getenv("DEEPSEEK_API_KEY")
@@ -42,8 +50,9 @@ route_map = { "川菜": sichuan_chain, "粤菜": cantonese_chain }
 print("川菜和粤菜的处理链创建成功。\n")
 
 # 3. 创建路由函数
+#    流程：用户问题 → 向量化 → 余弦相似度对比 → 找最近路由 → 调用对应链
 def route(info):
-    # 对用户查询进行嵌入
+    # 将用户查询转为向量（与路由描述使用同一模型，保证向量空间一致）
     query_embedding = embeddings.embed_query(info["query"])
     
     # 计算与各路由提示的余弦相似度
@@ -67,7 +76,7 @@ full_chain = RunnableLambda(route)
 
 # 4. 运行演示查询
 demo_queries = [
-    "水煮鱼怎么做才嫩？",        # 应该路由到川菜
+    "水煮鱼怎么做才嫩？",         # 应该路由到川菜
     "如何做一碗清淡的云吞面？",    # 应该路由到粤菜
     "麻婆豆腐的核心调料是什么？",  # 应该路由到川菜
 ]
@@ -80,4 +89,3 @@ for i, query in enumerate(demo_queries, 1):
         print(f"回答: {result}")
     except Exception as e:
         print(f"执行错误: {e}")
-
