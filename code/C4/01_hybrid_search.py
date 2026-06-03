@@ -1,14 +1,16 @@
 import json
 import os
+
 import numpy as np
-from pymilvus import connections, MilvusClient, FieldSchema, CollectionSchema, DataType, Collection, AnnSearchRequest, RRFRanker
+from pymilvus import connections, MilvusClient, FieldSchema, CollectionSchema, DataType, Collection, AnnSearchRequest, \
+    RRFRanker
 from pymilvus.model.hybrid import BGEM3EmbeddingFunction
 
 # 1. 初始化设置
 COLLECTION_NAME = "dragon_hybrid_demo"
-MILVUS_URI = "http://localhost:19530"  # 服务器模式
+MILVUS_URI = "http://39.105.217.174:19530"  # MILVUS 服务器
 DATA_PATH = "../../data/C4/metadata/dragon.json"  # 相对路径
-BATCH_SIZE = 50
+BATCH_SIZE = 50 # 预留给后续分批插入逻辑使用
 
 # 2. 连接 Milvus 并初始化嵌入模型
 print(f"--> 正在连接到 Milvus: {MILVUS_URI}")
@@ -24,6 +26,11 @@ if milvus_client.has_collection(COLLECTION_NAME):
     print(f"--> 正在删除已存在的 Collection '{COLLECTION_NAME}'...")
     milvus_client.drop_collection(COLLECTION_NAME)
 
+# Schema 设计要点：
+#   - pk：VARCHAR 主键，auto_id=True 由 Milvus 自动生成
+#   - sparse_vector：SPARSE_FLOAT_VECTOR，存储 BGE-M3 的词袋权重，用于关键词匹配
+#   - dense_vector：FLOAT_VECTOR，存储 BGE-M3 的语义嵌入，用于语义相似度检索
+#   - 其余字段：存储原始元数据，用于结果展示与过滤
 fields = [
     FieldSchema(name="pk", dtype=DataType.VARCHAR, is_primary=True, auto_id=True, max_length=100),
     FieldSchema(name="img_id", dtype=DataType.VARCHAR, max_length=100),
@@ -46,6 +53,10 @@ if not milvus_client.has_collection(COLLECTION_NAME):
     print("--> Collection 创建成功。")
 
     # 4. 创建索引
+    # 索引策略：
+    #   稀疏向量 → SPARSE_INVERTED_INDEX（倒排索引，与 BM25 机制匹配，适合高维稀疏数据）
+    #   密集向量 → AUTOINDEX（Milvus 自动选择最优 ANN 算法，通常为 HNSW 或 IVF_FLAT）
+    #   两者均使用 IP（内积）相似度，与 BGE-M3 归一化向量的训练目标一致
     print("--> 正在为新集合创建索引...")
     sparse_index = {"index_type": "SPARSE_INVERTED_INDEX", "metric_type": "IP"}
     collection.create_index("sparse_vector", sparse_index)
@@ -68,6 +79,8 @@ if collection.is_empty:
     with open(DATA_PATH, 'r', encoding='utf-8') as f:
         dataset = json.load(f)
 
+    # 将多个文本字段拼接为一个语料字符串，送入编码模型。
+    # 拼接策略决定检索偏重：当前以 title + description + location + environment为主，
     docs, metadata = [], []
     for item in dataset:
         parts = [
@@ -84,6 +97,8 @@ if collection.is_empty:
     print(f"--> 数据加载完成，共 {len(docs)} 条。")
 
     print("--> 正在生成向量嵌入...")
+    # ef() 一次性对所有文档编码，内部自动分批处理；
+    # 返回字典包含 "dense"（np.ndarray）和 "sparse"（scipy.sparse 矩阵）两路向量。
     embeddings = ef(docs)
     print("--> 向量生成完成。")
 
@@ -129,7 +144,9 @@ print(f"查询: '{search_query}'")
 print(f"过滤器: '{search_filter}'")
 
 query_embeddings = ef([search_query])
+# 密集向量
 dense_vec = query_embeddings["dense"][0]
+# 稀疏向量
 sparse_vec = query_embeddings["sparse"]._getrow(0)
 
 # 打印向量信息
@@ -181,10 +198,17 @@ for i, hit in enumerate(sparse_results):
     print(f"    描述: {hit.entity.get('description')[:100]}...")
 
 print("\n--- [混合] 稀疏+密集向量搜索结果 ---")
+
 # 创建 RRF 融合器
+# RRFRanker 实现倒数排名融合（Reciprocal Rank Fusion）：
+#   融合得分 = Σ 1 / (k + rank_i)，其中 k=60 为平滑系数。
+#   k 值越大，头部排名的权重差异越小（更"民主"）；k=60 是学术界常用默认值。
+#   RRF 的优势：无需对两路分数做归一化，天然适合异质向量融合。
 rerank = RRFRanker(k=60)
 
 # 创建搜索请求
+# 两路 AnnSearchRequest 各自独立检索 top_k 个候选，
+# 再由 RRF 在候选集的并集上重新排名，因此最终结果可能与单路结果有所不同。
 dense_req = AnnSearchRequest([dense_vec], "dense_vector", search_params, limit=top_k)
 sparse_req = AnnSearchRequest([sparse_vec], "sparse_vector", search_params, limit=top_k)
 
