@@ -1,16 +1,21 @@
 import os
-from langchain_core.prompts import ChatPromptTemplate
+
+from dotenv import load_dotenv
+from langchain.chat_models import init_chat_model
 from langchain_core.output_parsers import StrOutputParser
-from langchain_deepseek import ChatDeepSeek
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableBranch
 
-llm = ChatDeepSeek(
+load_dotenv()
+llm = init_chat_model(
     model="deepseek-chat", 
     temperature=0, 
     api_key=os.getenv("DEEPSEEK_API_KEY")
     )
 
 # 1. 设置不同菜系的处理链
+#    每条链 = Prompt 模板 → LLM → 字符串输出解析器
+#    使用 | 管道符将三者串联（LCEL 语法）
 sichuan_prompt = ChatPromptTemplate.from_template(
     "你是一位川菜大厨。请用正宗的川菜做法，回答关于「{question}」的问题。"
 )
@@ -29,6 +34,7 @@ general_chain = general_prompt | llm | StrOutputParser()
 
 
 # 2. 创建路由链
+# 分类器 Prompt：要求 LLM 仅输出单个分类词，便于后续字符串匹配
 classifier_prompt = ChatPromptTemplate.from_template(
     """根据用户问题中提到的菜品，将其分类为：['川菜', '粤菜', 或 '其他']。
     不要解释你的理由，只返回一个单词的分类结果。
@@ -37,6 +43,7 @@ classifier_prompt = ChatPromptTemplate.from_template(
 classifier_chain = classifier_prompt | llm | StrOutputParser()
 
 # 定义路由分支
+# RunnableBranch：按顺序检查条件，命中第一个为 True 的分支并执行对应链
 router_branch = RunnableBranch(
     (lambda x: "川菜" in x["topic"], sichuan_chain),
     (lambda x: "粤菜" in x["topic"], cantonese_chain),
@@ -44,6 +51,7 @@ router_branch = RunnableBranch(
 )
 
 # 组合成完整路由链
+# 分类器链 + 原始问题 -> 路由分支
 full_router_chain = {"topic": classifier_chain, "question": lambda x: x["question"]} | router_branch
 print("完整的路由链创建成功。\n")
 
@@ -69,4 +77,3 @@ for i, item in enumerate(demo_questions, 1):
         print(f"回答: {result}")
     except Exception as e:
         print(f"执行错误: {e}")
-
