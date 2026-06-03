@@ -1,11 +1,13 @@
+import logging
 import os
-from langchain_deepseek import ChatDeepSeek 
-from langchain_community.document_loaders import BiliBiliLoader
+
+from dotenv import load_dotenv
 from langchain.chains.query_constructor.base import AttributeInfo
+from langchain.chat_models import init_chat_model
 from langchain.retrievers.self_query.base import SelfQueryRetriever
+from langchain_community.document_loaders import BiliBiliLoader
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-import logging
 
 logging.basicConfig(level=logging.INFO)
 
@@ -71,13 +73,21 @@ metadata_field_info = [
     )
 ]
 
-# 4. 创建自查询检索器
-llm = ChatDeepSeek(
+# 4. 初始化 LLM
+# 加载 .env 文件中的环境变量
+load_dotenv()
+
+llm = init_chat_model(
     model="deepseek-chat", 
     temperature=0, 
     api_key=os.getenv("DEEPSEEK_API_KEY")
     )
 
+# 5. 创建自查询检索器
+#    关键参数说明：
+#      document_contents : 描述文档集合的整体内容，帮助 LLM 理解语料背景
+#      enable_limit      : 允许 LLM 从查询中推断返回数量，如"最短的1个视频"
+#      verbose           : 打印 LLM 生成的结构化查询，便于调试
 retriever = SelfQueryRetriever.from_llm(
     llm=llm,
     vectorstore=vectorstore,
@@ -87,7 +97,7 @@ retriever = SelfQueryRetriever.from_llm(
     verbose=True
 )
 
-# 5. 执行查询示例
+# 6. 执行查询示例
 queries = [
     "时间最短的视频",
     "时长大于600秒的视频"
