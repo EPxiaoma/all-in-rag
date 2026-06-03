@@ -1,6 +1,7 @@
 import json
 import os
 from typing import List, Dict, Any
+
 from pymilvus import MilvusClient, FieldSchema, CollectionSchema, DataType
 from pymilvus.model.hybrid import BGEM3EmbeddingFunction
 
@@ -8,7 +9,7 @@ from pymilvus.model.hybrid import BGEM3EmbeddingFunction
 class SimpleKnowledgeBase:
     """知识库"""
     
-    def __init__(self, milvus_uri: str = "http://localhost:19530"):
+    def __init__(self, milvus_uri: str = "http://39.105.217.174:19530"):
         self.milvus_uri = milvus_uri
         self.client = MilvusClient(uri=milvus_uri)
         self.embedding_function = BGEM3EmbeddingFunction(use_fp16=False, device="cpu")

@@ -1,18 +1,21 @@
 import os
-import sys
+# os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 import sqlite3
+import sys
+
+from dotenv import load_dotenv
 
 # 添加text2sql模块路径
 sys.path.append(os.path.join(os.path.dirname(__file__), 'text2sql'))
 
 from text2sql.text2sql_agent import SimpleText2SQLAgent
 
-
 def setup_demo():
     """设置演示环境"""
     print("=== Text2SQL框架演示 ===\n")
     
     # 检查API密钥
+    load_dotenv()
     api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
         print("先设置DEEPSEEK_API_KEY环境变量")

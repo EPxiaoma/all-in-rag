@@ -1,6 +1,7 @@
-import sqlite3
 import os
+import sqlite3
 from typing import Dict, Any, List, Tuple
+
 from .knowledge_base import SimpleKnowledgeBase
 from .sql_generator import SimpleSQLGenerator
 
@@ -8,7 +9,7 @@ from .sql_generator import SimpleSQLGenerator
 class SimpleText2SQLAgent:
     """Text2SQL代理"""
     
-    def __init__(self, milvus_uri: str = "http://localhost:19530", api_key: str = None):
+    def __init__(self, milvus_uri: str = "http://39.105.217.174:19530", api_key: str = None):
         """初始化代理"""
         self.knowledge_base = SimpleKnowledgeBase(milvus_uri)
         self.sql_generator = SimpleSQLGenerator(api_key)
@@ -210,4 +211,4 @@ class SimpleText2SQLAgent:
             print("数据库连接已关闭")
         
         self.knowledge_base.cleanup()
-        print("知识库已清理") 
+        print("知识库已清理")

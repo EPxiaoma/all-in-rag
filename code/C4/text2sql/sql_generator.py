@@ -1,7 +1,8 @@
 import os
 from typing import List, Dict, Any
+
+from langchain.schema import HumanMessage
 from langchain_deepseek import ChatDeepSeek
-from langchain.schema import HumanMessage, SystemMessage
 
 
 class SimpleSQLGenerator:
@@ -22,18 +23,18 @@ class SimpleSQLGenerator:
         # 构建提示
         prompt = f"""你是一个SQL专家。请根据以下信息将用户问题转换为SQL查询语句。
 
-数据库信息：
-{context}
-
-用户问题：{user_query}
-
-要求：
-1. 只返回SQL语句，不要包含任何解释
-2. 确保SQL语法正确
-3. 使用上下文中提供的表名和字段名
-4. 如果需要JOIN，请根据表结构进行合理关联
-
-SQL语句："""
+                    数据库信息：
+                    {context}
+                    
+                    用户问题：{user_query}
+                    
+                    要求：
+                    1. 只返回SQL语句，不要包含任何解释
+                    2. 确保SQL语法正确
+                    3. 使用上下文中提供的表名和字段名
+                    4. 如果需要JOIN，请根据表结构进行合理关联
+                    
+                    SQL语句："""
 
         messages = [HumanMessage(content=prompt)]
         response = self.llm.invoke(messages)
@@ -55,16 +56,16 @@ SQL语句："""
         
         prompt = f"""请修复以下SQL语句的错误。
 
-数据库信息：
-{context}
-
-原始SQL：
-{original_sql}
-
-错误信息：
-{error_message}
-
-请返回修复后的SQL语句（只返回SQL，不要解释）："""
+                    数据库信息：
+                    {context}
+                    
+                    原始SQL：
+                    {original_sql}
+                    
+                    错误信息：
+                    {error_message}
+                    
+                    请返回修复后的SQL语句（只返回SQL，不要解释）："""
 
         messages = [HumanMessage(content=prompt)]
         response = self.llm.invoke(messages)
@@ -110,4 +111,4 @@ SQL语句："""
             context += "=== 查询示例 ===\n"
             context += "\n".join(qsql_examples) + "\n\n"
         
-        return context 
+        return context
