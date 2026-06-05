@@ -1,15 +1,19 @@
-from typing import List
 import os
+from typing import List
+
+from dotenv import load_dotenv
+from langchain.chat_models import init_chat_model
+from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel, Field
-from langchain_core.output_parsers import PydanticOutputParser
-from langchain_deepseek import ChatDeepSeek
 
 # 初始化 LLM
-llm = ChatDeepSeek(
+load_dotenv()
+llm = init_chat_model(
     model="deepseek-chat",
+    temperature=0,
     api_key=os.getenv("DEEPSEEK_API_KEY")
-)
+    )
 
 # 1. 定义数据结构
 class PersonInfo(BaseModel):
