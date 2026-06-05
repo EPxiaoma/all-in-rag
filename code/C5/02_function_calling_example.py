@@ -1,23 +1,19 @@
-from openai import OpenAI
 import os
 
-# 初始化 OpenAI 客户端
-client = OpenAI(
-    api_key=os.getenv("DEEPSEEK_API_KEY"),
-    base_url="https://api.deepseek.com",
+from dotenv import load_dotenv
+from langchain.chat_models import init_chat_model
+from langchain_core.messages import HumanMessage, ToolMessage
+
+load_dotenv()
+
+# 初始化 LLM
+client = init_chat_model(
+    model="deepseek-chat",
+    temperature=0,
+    api_key=os.getenv("DEEPSEEK_API_KEY")
 )
 
-# 定义一个函数，用于发送消息并获取模型的响应
-def send_messages(messages, tools=None):
-    response = client.chat.completions.create(
-        model="deepseek-chat",
-        messages=messages,
-        tools=tools,
-        tool_choice="auto",  # 让模型自主决定是否调用工具
-    )
-    return response.choices[0].message
-
-# 1. 定义工具（函数）的 Schema
+# 1. 定义工具 Schema（LangChain 支持直接传 OpenAI 格式的 dict）
 tools = [
     {
         "type": "function",
@@ -38,34 +34,37 @@ tools = [
     },
 ]
 
-# 1. 用户提问，模型决策调用工具
-messages = [{"role": "user", "content": "杭州今天天气怎么样？"}]
-print(f"User> {messages[0]['content']}\n")
-message = send_messages(messages, tools=tools)
+# 将工具绑定到模型，返回一个新的可调用对象
+client_with_tools = client.bind_tools(tools)
 
-# 2. 执行工具，并将结果返回模型
+# 2. 第一轮：用户提问，模型决策是否调用工具
+messages = [HumanMessage(content="杭州今天天气怎么样？")]
+print(f"User> {messages[0].content}\n")  # ✅ LangChain 消息对象用 .content 属性
+
+message = client_with_tools.invoke(messages)
+
+# 3. 执行工具，并将结果返回模型
 if message.tool_calls:
     print("--- 模型发起了工具调用 ---")
     tool_call = message.tool_calls[0]
-    function_info = tool_call.function
-    print(f"工具名称: {function_info.name}")
-    print(f"工具参数: {function_info.arguments}")
+    print(f"工具名称: {tool_call['name']}")
+    print(f"工具参数: {tool_call['args']}")
 
-    # 将模型的回复（包含工具调用请求）添加到消息历史中
-    messages.append(message)
+    messages.append(message)  # 将模型回复加入历史
 
     # 模拟执行工具
     tool_output = "24℃，晴朗"
     print(f"--- 执行工具并返回结果 ---")
     print(f"工具执行结果: {tool_output}\n")
 
-    # 将工具的执行结果作为一个新的消息添加到历史中
-    messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": tool_output})
+    messages.append(ToolMessage(
+        content=tool_output,
+        tool_call_id=tool_call['id']
+    ))
 
-    # 3. 第二次调用：将工具结果返回给模型，获取最终回答
+    # 4. 第二轮：将工具结果返回模型，获取最终答案
     print("--- 将工具结果返回给模型，获取最终答案 ---")
-    final_message = send_messages(messages, tools=tools)
+    final_message = client_with_tools.invoke(messages)
     print(f"Model> {final_message.content}")
 else:
-    # 如果模型没有调用工具，直接打印其回答
     print(f"Model> {message.content}")
