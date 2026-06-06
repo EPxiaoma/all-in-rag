@@ -15,13 +15,13 @@ class RAGConfig:
 
     # 模型配置
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
-    llm_model: str = "kimi-k2-0711-preview"
+    llm_model: str = "kimi-k2.6"
 
     # 检索配置
     top_k: int = 3
 
     # 生成配置
-    temperature: float = 0.1
+    temperature: float = 1.0
     max_tokens: int = 2048
 
     def __post_init__(self):
