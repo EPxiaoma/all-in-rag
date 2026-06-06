@@ -1,19 +1,21 @@
-import os
 import asyncio
+import os
+
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
-from llama_index.core.node_parser import SentenceWindowNodeParser, SentenceSplitter
-from llama_index.llms.deepseek import DeepSeek
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.core.postprocessor import MetadataReplacementPostProcessor
+from llama_index.core.evaluation import DatasetGenerator, QueryResponseDataset
 from llama_index.core.evaluation import (
     FaithfulnessEvaluator,
     RelevancyEvaluator,
     BatchEvalRunner,
 )
-from llama_index.core.evaluation.eval_utils import get_results_df
-from llama_index.core.evaluation import DatasetGenerator, QueryResponseDataset
+from llama_index.core.node_parser import SentenceWindowNodeParser, SentenceSplitter
+from llama_index.core.postprocessor import MetadataReplacementPostProcessor
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.llms.deepseek import DeepSeek
 
+# 配置全局 LLM
 Settings.llm = DeepSeek(model="deepseek-chat", temperature=0.1, api_key=os.getenv("DEEPSEEK_API_KEY"))
+# 配置全局向量模型
 Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en")
 
 async def main():
@@ -31,8 +33,6 @@ async def main():
         response_eval_dataset = await dataset_generator.agenerate_dataset_from_nodes(num=15)  # 减少问题数量
         response_eval_dataset.save_json("./c6_response_eval_dataset.json")
 
-
-
     # 2. 构建两种不同的RAG查询引擎和检索器进行对比
     # 2.1 句子窗口检索
     sentence_parser = SentenceWindowNodeParser.from_defaults(
@@ -49,7 +49,6 @@ async def main():
             MetadataReplacementPostProcessor(target_metadata_key="window")
         ],
     )
-    sentence_retriever = sentence_index.as_retriever(similarity_top_k=2)
 
     # 2.2 常规分块检索（基准）
     base_parser = SentenceSplitter(chunk_size=512)
@@ -57,7 +56,6 @@ async def main():
     base_index = VectorStoreIndex(base_nodes)
 
     base_query_engine = base_index.as_query_engine(similarity_top_k=2)
-    base_retriever = base_index.as_retriever(similarity_top_k=2)
 
     # 3. 初始化响应评估器
     faithfulness_evaluator = FaithfulnessEvaluator(llm=Settings.llm)
@@ -109,8 +107,6 @@ async def main():
     print(f"  忠实度: {base_faith:.1%}")
     print(f"  相关性: {base_rel:.1%}")
 
-
-
     # 简单对比
     if sentence_faith > base_faith and sentence_rel > base_rel:
         print(f"\n✅ 句子窗口检索在两个维度上都优于常规分块检索")
@@ -118,8 +114,6 @@ async def main():
         print(f"\n⚖️  句子窗口检索在某些维度上有优势")
     else:
         print(f"\n❌ 句子窗口检索未显示明显优势")
-
-
 
 if __name__ == "__main__":
     asyncio.run(main())
